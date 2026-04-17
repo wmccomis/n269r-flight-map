@@ -89,6 +89,7 @@
       display: flex;
       flex: 1;
       overflow: hidden;
+      position: relative;
     }
 
     /* Sidebar */
@@ -253,6 +254,75 @@
     .detail-k { color: var(--muted); }
     .detail-v { font-weight: 600; }
 
+    /* Collapsible stats bar */
+    #stats-toggle-btn {
+      margin-left: 6px;
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      border-radius: 6px;
+      padding: 2px 9px;
+      cursor: pointer;
+      font-size: 0.7rem;
+      flex-shrink: 0;
+      line-height: 1.6;
+    }
+    #stats-toggle-btn:hover { border-color: var(--text); color: var(--text); }
+    #stats-bar.collapsed { padding: 5px 16px; }
+    #stats-bar.collapsed .stat-item,
+    #stats-bar.collapsed .stat-divider,
+    #stats-bar.collapsed .plane-info-text { display: none; }
+
+    /* Collapsible sidebar */
+    #sidebar { transition: width 0.25s ease, min-width 0.25s ease; }
+    #sidebar.collapsed { width: 0 !important; min-width: 0 !important; overflow: hidden; }
+
+    #sidebar-toggle-btn {
+      position: absolute;
+      top: 14px;
+      left: 280px;
+      z-index: 1002;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-left: none;
+      border-radius: 0 6px 6px 0;
+      width: 18px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 0.75rem;
+      transition: left 0.25s ease;
+      user-select: none;
+      padding: 0;
+    }
+    #sidebar-toggle-btn:hover { color: var(--text); background: var(--surface2); }
+
+    /* Mobile: sidebar as overlay */
+    @media (max-width: 640px) {
+      #sidebar {
+        position: absolute;
+        top: 0; left: 0;
+        height: 100%;
+        z-index: 1100;
+        width: 280px !important;
+        min-width: 280px !important;
+      }
+      #sidebar.collapsed { width: 0 !important; min-width: 0 !important; }
+      #sidebar-toggle-btn { top: 10px; }
+      #mobile-backdrop {
+        display: none;
+        position: absolute;
+        inset: 0;
+        background: rgba(0,0,0,0.5);
+        z-index: 1099;
+      }
+      #mobile-backdrop.visible { display: block; }
+    }
+    @media (min-width: 641px) { #mobile-backdrop { display: none !important; } }
+
     /* Loading */
     #loading {
       position: fixed;
@@ -348,11 +418,13 @@
   </div>
   <div class="plane-info">
     <span class="plane-tag">N269R</span>
-    <span>1986 Piper PA-46 · Apr 2023 – Apr 2026</span>
+    <span class="plane-info-text">1986 Piper PA-46 · Apr 2023 – Apr 2026</span>
+    <button id="stats-toggle-btn" onclick="toggleStats()" title="Toggle stats bar">▲</button>
   </div>
 </div>
 
 <div id="main">
+  <div id="mobile-backdrop" onclick="toggleSidebar()"></div>
   <div id="sidebar">
     <div id="filter-section">
       <div class="section-title">Filter by Year</div>
@@ -396,6 +468,7 @@
     <div id="flight-list"></div>
   </div>
 
+  <button id="sidebar-toggle-btn" onclick="toggleSidebar()" title="Toggle sidebar">‹</button>
   <div id="map" style="position:relative;"></div>
 </div>
 
@@ -521,6 +594,7 @@ async function init() {
 
   // Hide loading
   document.getElementById('loading').style.display = 'none';
+  return Promise.resolve();
 }
 
 function setMsg(msg) {
@@ -668,8 +742,32 @@ function closeDetail() {
   document.querySelectorAll('.flight-item').forEach(el => el.classList.remove('selected'));
 }
 
+function toggleStats() {
+  const bar = document.getElementById('stats-bar');
+  const btn = document.getElementById('stats-toggle-btn');
+  const collapsed = bar.classList.toggle('collapsed');
+  btn.textContent = collapsed ? '▼' : '▲';
+}
+
+function toggleSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  const btn = document.getElementById('sidebar-toggle-btn');
+  const backdrop = document.getElementById('mobile-backdrop');
+  const collapsed = sidebar.classList.toggle('collapsed');
+  btn.style.left = collapsed ? '0px' : '280px';
+  btn.textContent = collapsed ? '›' : '‹';
+  if (backdrop) backdrop.classList.toggle('visible', !collapsed && window.innerWidth <= 640);
+  setTimeout(() => map && map.invalidateSize(), 260);
+}
+
 // Start
-init();
+init().then(() => {
+  // On mobile, start with sidebar collapsed and stats bar collapsed
+  if (window.innerWidth <= 640) {
+    toggleSidebar();
+    toggleStats();
+  }
+});
 </script>
 </body>
 </html>
