@@ -841,21 +841,99 @@ function buildAirportLayer() {
   // Set initial visibility based on zoom
   updateAirportZoom();
   map.on('zoomend', updateAirportZoom);
+  map.on('moveend', () => { if (airportsVisible && map.getZoom() >= 12) fetchRunways(); });
 }
 
 function updateAirportZoom() {
   if (!airportsVisible || !airportLayer) return;
   const z = map.getZoom();
-  airportMarkers.forEach(m => {
-    const t = m._apType;
-    const visible = (t === 'large_airport') ||
-                    (t === 'medium_airport' && z >= 6) ||
-                    (t === 'small_airport' && z >= 8);
-    if (visible) {
-      if (!airportLayer.hasLayer(m)) airportLayer.addLayer(m);
-    } else {
-      if (airportLayer.hasLayer(m)) airportLayer.removeLayer(m);
-    }
+
+  if (z >= 12) {
+    // Hide dots, show OSM runways
+    map.removeLayer(airportLayer);
+    runwayLayer.addTo(map);
+    fetchRunways();
+  } else {
+    // Show dots, hide OSM runways
+    runwayLayer.clearLayers();
+    if (!map.hasLayer(airportLayer)) airportLayer.addTo(map);
+    airportMarkers.forEach(m => {
+      const t = m._apType;
+      const visible = (t === 'large_airport') ||
+                      (t === 'medium_airport' && z >= 6) ||
+                      (t === 'small_airport' && z >= 8);
+      if (visible) {
+        if (!airportLayer.hasLayer(m)) airportLayer.addLayer(m);
+      } else {
+        if (airportLayer.hasLayer(m)) airportLayer.removeLayer(m);
+      }
+    });
+  }
+}
+
+// ── Overpass runway overlay ───────────────────────────────────────────────────
+const runwayLayer = L.layerGroup();
+const runwayCache = new Map();
+
+function overpassQuery(bounds) {
+  const b = `${bounds.getSouth().toFixed(4)},${bounds.getWest().toFixed(4)},${bounds.getNorth().toFixed(4)},${bounds.getEast().toFixed(4)}`;
+  return `[out:json][timeout:15];(way["aeroway"~"^(runway|taxiway|apron)$"](${b}););out body;>;out skel qt;`;
+}
+
+async function fetchRunways() {
+  if (!airportsVisible || map.getZoom() < 12) return;
+  const bounds = map.getBounds();
+  const key = [
+    Math.floor(bounds.getSouth() * 4),
+    Math.floor(bounds.getWest() * 4),
+    Math.floor(bounds.getNorth() * 4),
+    Math.floor(bounds.getEast() * 4)
+  ].join(',');
+  if (runwayCache.has(key)) { renderRunways(runwayCache.get(key)); return; }
+
+  try {
+    const resp = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'data=' + encodeURIComponent(overpassQuery(bounds))
+    });
+    const data = await resp.json();
+    const nodes = new Map(
+      data.elements.filter(e => e.type === 'node').map(n => [n.id, { lat: n.lat, lon: n.lon }])
+    );
+    const features = data.elements
+      .filter(e => e.type === 'way' && e.tags?.aeroway)
+      .map(way => ({
+        type: way.tags.aeroway,
+        closed: way.nodes[0] === way.nodes[way.nodes.length - 1],
+        latlngs: way.nodes.map(id => nodes.get(id)).filter(Boolean).map(n => [n.lat, n.lon])
+      }))
+      .filter(f => f.latlngs.length >= 2);
+    runwayCache.set(key, features);
+    renderRunways(features);
+  } catch (e) {
+    console.warn('Overpass fetch failed:', e);
+  }
+}
+
+function renderRunways(features) {
+  runwayLayer.clearLayers();
+  // Draw in order: aprons first, then taxiways, then runways on top
+  const order = ['apron', 'taxiway', 'runway'];
+  order.forEach(type => {
+    features.filter(f => f.type === type).forEach(f => {
+      const style = type === 'runway'
+        ? { color: '#e2e8f0', weight: 1, fillColor: '#c0c8d8', fillOpacity: 0.9, opacity: 1 }
+        : type === 'taxiway'
+        ? { color: '#6b7280', weight: 1.5, opacity: 0.85 }
+        : { color: '#374151', weight: 1, fillColor: '#374151', fillOpacity: 0.6, opacity: 0.6 };
+
+      if (f.closed && f.latlngs.length >= 3) {
+        L.polygon(f.latlngs, style).addTo(runwayLayer);
+      } else {
+        L.polyline(f.latlngs, style).addTo(runwayLayer);
+      }
+    });
   });
 }
 
@@ -864,12 +942,14 @@ function toggleAirports() {
   if (airportsVisible) {
     airportsVisible = false;
     if (airportLayer) map.removeLayer(airportLayer);
+    map.removeLayer(runwayLayer);
     btn.classList.remove('active');
     btn.innerHTML = '<span class="airport-dot"></span> Show Airports';
   } else {
     buildAirportLayer();
     airportsVisible = true;
-    airportLayer.addTo(map);
+    // updateAirportZoom decides which layer to show
+    updateAirportZoom();
     // Make sure flights stay on top
     layerGroup.eachLayer(l => l.bringToFront && l.bringToFront());
     btn.classList.add('active');
