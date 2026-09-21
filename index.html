@@ -665,16 +665,16 @@ function renderFlightList(flights) {
     const year = f.date.substring(0,4);
     const color = YEAR_COLORS[year] || '#888';
     const dur = formatDuration(f.duration_min);
-    const utcStart = new Date(f.start_ts * 1000).toISOString().substring(11,16);
+    const utcStart = f.start_ts ? new Date(f.start_ts * 1000).toISOString().substring(11,16) : '??:??';
     return `<div class="flight-item" data-idx="${f._layerIdx !== undefined ? f._layerIdx : -1}" onclick="clickFlight(${f._layerIdx})">
       <div class="flight-date"><span class="flight-color-dot" style="background:${color}"></span>${f.date} · ${utcStart}Z</div>
       <div class="flight-route">
-        <span>${f.dist_nm.toFixed(0)} nm</span>
+        <span>${(f.dist_nm != null ? f.dist_nm : 0).toFixed(0)} nm</span>
         <span>${dur}</span>
       </div>
       <div class="flight-meta">
-        <span>↑ ${f.max_alt_ft.toLocaleString()}ft</span>
-        <span>⚡ ${f.max_gs_kt}kt</span>
+        <span>↑ ${(f.max_alt_ft || 0).toLocaleString()}ft</span>
+        <span>⚡ ${f.max_gs_kt || 0}kt</span>
       </div>
     </div>`;
   }).join('');
